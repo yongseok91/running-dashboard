@@ -356,7 +356,7 @@
         </div>
 
         <div class="card">
-            <h2>⏱️ 최근 등록된 학생 기록</h2>
+            <h2>⏱️ 최근 등록된 기록</h2>
             <table>
                 <thead>
                     <tr>
@@ -646,7 +646,7 @@
             };
             runningLogs.push(mockRow);
             runningLogs.forEach((log, idx) => log.globalIndex = idx);
-            alert(`[테스트 모드] ${name} 학생의 기록이 로컬에 임시 저장되었습니다.\n실제 저장을 하려면 SCRIPT_URL을 지정하세요.`);
+            alert(`[테스트 모드] ${name} 기록이 로컬에 임시 저장되었습니다.\n실제 저장을 하려면 SCRIPT_URL을 지정하세요.`);
             
             document.getElementById('student-name').value = '';
             document.getElementById('run-distance').value = '';
@@ -668,7 +668,7 @@
 
             if (!response.ok) throw new Error('등록 실패');
             
-            alert(`${name} 학생의 기록이 구글 시트에 등록되었습니다!`);
+            alert(`${name} 기록이 구글 시트에 등록되었습니다!`);
             
             document.getElementById('student-name').value = '';
             document.getElementById('run-distance').value = '';
@@ -696,7 +696,7 @@
             let distNum = parseFloat(log['거리 (km)']);
             if (isNaN(distNum)) distNum = 0;
             
-            modalInfo.innerText = `${escapeHTML(log['학년'])} ${escapeHTML(log['반'])} ${escapeHTML(log['이름'])} 학생 (${distNum.toFixed(2)} km)`;
+            modalInfo.innerText = `${escapeHTML(log['학년'])} ${escapeHTML(log['반'])} ${escapeHTML(log['이름'])} (${distNum.toFixed(2)} km)`;
             modalImg.src = log['증빙사진 (Base64)'];
             modal.style.display = 'flex';
         } else {
