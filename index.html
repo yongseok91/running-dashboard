@@ -392,7 +392,13 @@
     let runningLogs = [];
     let compressedBase64 = ''; 
 
-    document.getElementById('run-date').value = '2026-06-10';
+    // ---- [수정된 부분] 오늘 날짜를 가져와서 YYYY-MM-DD 형식으로 변환 후 기본값으로 설정 ----
+    const todayDate = new Date();
+    const currentYear = todayDate.getFullYear();
+    const currentMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
+    const currentDay = String(todayDate.getDate()).padStart(2, '0');
+    document.getElementById('run-date').value = `${currentYear}-${currentMonth}-${currentDay}`;
+    // -----------------------------------------------------------------------------------------
 
     const START_DATE = new Date('2026-06-08T00:00:00');
     const END_DATE = new Date('2026-07-10T23:59:59'); 
@@ -509,18 +515,14 @@
             runningLogs = [];
         }
 
-        // 1. 날짜 및 증빙사진 기준 필터링 (사진이 없는 기존 데이터는 자동 제외 처리)
         const filteredLogs = runningLogs.filter(log => {
             if (!log || !log['날짜']) return false;
-            
-            // [수정] 증빙사진 데이터가 누락되었거나 비어있으면 대시보드 리스트와 순위 집계에서 완전히 제외
             if (!log['증빙사진 (Base64)'] || log['증빙사진 (Base64)'].trim() === '') return false;
             
             const logDate = new Date(log['날짜']);
             return logDate >= START_DATE && logDate <= END_DATE;
         });
         
-        // 2. 최신 순 정렬
         filteredLogs.sort((a, b) => new Date(b['날짜']) - new Date(a['날짜']));
 
         logBody.innerHTML = '';
@@ -528,13 +530,11 @@
             logBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">최근 등록된 기록이 없습니다.</td></tr>`;
         }
 
-        // 3. 기록 테이블 그리기
         filteredLogs.forEach((log) => {
             let distNum = parseFloat(log['거리 (km)']);
             if (isNaN(distNum)) distNum = 0;
 
             const dateStr = log['날짜'] ? String(log['날짜']) : '';
-            
             const safeGrade = escapeHTML(log['학년']);
             const safeClass = escapeHTML(log['반']);
             const safeName = escapeHTML(log['이름']);
@@ -551,7 +551,6 @@
             logBody.appendChild(tr);
         });
 
-        // 4. 반별 통계 정산
         const classTotals = {};
         filteredLogs.forEach(log => {
             const classKey = `${log['학년'] || '미지정'} ${log['반'] || '미지정'}`;
@@ -611,13 +610,11 @@
             dateWarn.style.display = 'none';
         }
 
-        // 로딩 시작 및 버튼 락
         submitBtn.innerHTML = '⏳ 등록 중...';
         submitBtn.disabled = true;
 
         const base64Image = compressedBase64;
 
-        // [수정] 이미지 데이터 유효성 검사 추가 (사진 미첨부 시 차단)
         if (!base64Image || base64Image.trim() === '') {
             alert('⚠️ 증빙 사진은 필수입니다! 사진을 선택한 후 다시 시도해주세요.');
             submitBtn.innerHTML = '기록 등록하기';
