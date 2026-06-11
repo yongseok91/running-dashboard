@@ -387,19 +387,16 @@
 </div>
 
 <script>
-    // ⚠️ 이곳에 발급받은 구글 웹 앱 URL을 넣으세요.
     const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzREtoFpuzw49YmitDenLiuiHyF7rRR15wHzIcprLzfs14Qaaac803y7nli8m4KDZWjew/exec'; 
 
     let runningLogs = [];
-    let compressedBase64 = ''; // 압축된 실데이터를 임시 보관할 변수
+    let compressedBase64 = ''; 
 
-    // 초기 날짜를 2026-06-10으로 고정 설정
     document.getElementById('run-date').value = '2026-06-10';
 
     const START_DATE = new Date('2026-06-08T00:00:00');
-    const END_DATE = new Date('2026-07-10T23:59:59'); // 마감일 자정 직전까지 온전히 포함하도록 수정
+    const END_DATE = new Date('2026-07-10T23:59:59'); 
 
-    // XSS 공격 방어용 문자열 탈출(Sanitize) 함수 추가
     function escapeHTML(str) {
         if (!str) return '';
         return String(str).replace(/[&<>'"]/g, function(tag) {
@@ -413,7 +410,6 @@
         });
     }
 
-    // 대용량 스마트폰 이미지 압축용 전처리 함수 추가
     function compressImage(file, maxWidth = 800, quality = 0.7) {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -435,7 +431,6 @@
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    // 용량 감소를 위해 JPEG 형식 및 70% 퀄리티로 압축하여 반환
                     const base64 = canvas.toDataURL('image/jpeg', quality);
                     resolve(base64);
                 };
@@ -455,7 +450,6 @@
             fileLabel.style.backgroundColor = '#a16207';
 
             try {
-                // 원본 파일을 최대 가로 800px 크기의 가벼운 이미지로 압축 가공
                 compressedBase64 = await compressImage(input.files[0], 800, 0.7);
                 
                 previewImg.src = compressedBase64;
@@ -515,9 +509,13 @@
             runningLogs = [];
         }
 
-        // 1. 날짜 기준 필터링 및 유효성 확인
+        // 1. 날짜 및 증빙사진 기준 필터링 (사진이 없는 기존 데이터는 자동 제외 처리)
         const filteredLogs = runningLogs.filter(log => {
             if (!log || !log['날짜']) return false;
+            
+            // [수정] 증빙사진 데이터가 누락되었거나 비어있으면 대시보드 리스트와 순위 집계에서 완전히 제외
+            if (!log['증빙사진 (Base64)'] || log['증빙사진 (Base64)'].trim() === '') return false;
+            
             const logDate = new Date(log['날짜']);
             return logDate >= START_DATE && logDate <= END_DATE;
         });
@@ -618,6 +616,14 @@
         submitBtn.disabled = true;
 
         const base64Image = compressedBase64;
+
+        // [수정] 이미지 데이터 유효성 검사 추가 (사진 미첨부 시 차단)
+        if (!base64Image || base64Image.trim() === '') {
+            alert('⚠️ 증빙 사진은 필수입니다! 사진을 선택한 후 다시 시도해주세요.');
+            submitBtn.innerHTML = '기록 등록하기';
+            submitBtn.disabled = false;
+            return; 
+        }
 
         const payload = {
             action: 'create',
