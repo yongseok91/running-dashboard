@@ -308,8 +308,6 @@
                 <select id="student-class">
                     <option value="1반">1반</option>
                     <option value="2반">2반</option>
-                    <option value="3반">3반</option>
-                    <option value="4반">4반</option>
                 </select>
             </div>
             <div class="form-group">
@@ -393,15 +391,15 @@
     const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzREtoFpuzw49YmitDenLiuiHyF7rRR15wHzIcprLzfs14Qaaac803y7nli8m4KDZWjew/exec'; 
 
     let runningLogs = [];
-    let compressedBase64 = ''; // [수정] 압축된 실데이터를 임시 보관할 변수
+    let compressedBase64 = ''; // 압축된 실데이터를 임시 보관할 변수
 
     // 초기 날짜를 2026-06-10으로 고정 설정
     document.getElementById('run-date').value = '2026-06-10';
 
     const START_DATE = new Date('2026-06-08T00:00:00');
-    const END_DATE = new Date('2026-07-10T23:59:59'); // [수정] 마감일 자정 직전까지 온전히 포함하도록 수정
+    const END_DATE = new Date('2026-07-10T23:59:59'); // 마감일 자정 직전까지 온전히 포함하도록 수정
 
-    // [수정] XSS 공격 방어용 문자열 탈출(Sanitize) 함수 추가
+    // XSS 공격 방어용 문자열 탈출(Sanitize) 함수 추가
     function escapeHTML(str) {
         if (!str) return '';
         return String(str).replace(/[&<>'"]/g, function(tag) {
@@ -415,7 +413,7 @@
         });
     }
 
-    // [수정] 대용량 스마트폰 이미지 압축용 전처리 함수 추가
+    // 대용량 스마트폰 이미지 압축용 전처리 함수 추가
     function compressImage(file, maxWidth = 800, quality = 0.7) {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -487,7 +485,6 @@
         if (!SCRIPT_URL) {
             console.warn('SCRIPT_URL이 지정되지 않아 로컬 스토리지를 이용합니다.');
             runningLogs = JSON.parse(localStorage.getItem('schoolRunningLogs')) || [];
-            // [수정] 불러온 배열의 고정 인덱스 속성 맵핑
             runningLogs.forEach((log, idx) => log.globalIndex = idx);
             updateDashboard();
             return;
@@ -497,7 +494,6 @@
             const response = await fetch(`${SCRIPT_URL}?action=read`);
             if (!response.ok) throw new Error('데이터 불러오기 실패');
             runningLogs = await response.json();
-            // [수정] 원본 배열의 실제 인덱스를 보존하기 위한 장치 설정
             if (Array.isArray(runningLogs)) {
                 runningLogs.forEach((log, idx) => log.globalIndex = idx);
             }
@@ -541,7 +537,6 @@
 
             const dateStr = log['날짜'] ? String(log['날짜']) : '';
             
-            // [수정] 모든 동적 데이터를 escapeHTML로 감싸 XSS 방어 처리
             const safeGrade = escapeHTML(log['학년']);
             const safeClass = escapeHTML(log['반']);
             const safeName = escapeHTML(log['이름']);
@@ -622,7 +617,6 @@
         submitBtn.innerHTML = '⏳ 등록 중...';
         submitBtn.disabled = true;
 
-        // [수정] 전처리 압축된 인코딩 데이터를 전송 변수에 대입
         const base64Image = compressedBase64;
 
         const payload = {
@@ -645,7 +639,7 @@
                 '증빙사진 (Base64)': base64Image
             };
             runningLogs.push(mockRow);
-            runningLogs.forEach((log, idx) => log.globalIndex = idx); // 인덱스 최신화
+            runningLogs.forEach((log, idx) => log.globalIndex = idx);
             alert(`[테스트 모드] ${name} 학생의 기록이 로컬에 임시 저장되었습니다.\n실제 저장을 하려면 SCRIPT_URL을 지정하세요.`);
             
             document.getElementById('student-name').value = '';
@@ -686,7 +680,6 @@
         }
     }
 
-    // [수정] 유실 위험이 없는 globalIndex 속성을 직관적으로 파싱하도록 안전하게 변형
     function viewImage(globalIndex) {
         const modal = document.getElementById('imageModal');
         const modalImg = document.getElementById('modalImg');
@@ -697,7 +690,6 @@
             let distNum = parseFloat(log['거리 (km)']);
             if (isNaN(distNum)) distNum = 0;
             
-            // [수정] 모달 내부 텍스트 노출도 방어 코드 적용
             modalInfo.innerText = `${escapeHTML(log['학년'])} ${escapeHTML(log['반'])} ${escapeHTML(log['이름'])} 학생 (${distNum.toFixed(2)} km)`;
             modalImg.src = log['증빙사진 (Base64)'];
             modal.style.display = 'flex';
