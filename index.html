@@ -387,18 +387,18 @@
 </div>
 
 <script>
-    // ⚠️ 중요: 배포 후 발급받은 정확한 웹 앱 URL을 여기에 넣으셔야 합니다.
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzREtoFpuzw49YmitDenLiuiHyF7rRR15wHzIcprLzfs14Qaaac803y7nli8m4KDZWjew/exec'; 
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbznSU0b9v4tQlvamyRI9Mj6zk8YUauZzLT35XSDPVZU0AmDRy8aEu-zdpUPgdPMUTOQ8g/exec'; 
 
     let runningLogs = [];
     let compressedBase64 = ''; 
 
-    // 오늘 날짜 기본값 설정
+    // ---- [수정된 부분] 오늘 날짜를 가져와서 YYYY-MM-DD 형식으로 변환 후 기본값으로 설정 ----
     const todayDate = new Date();
     const currentYear = todayDate.getFullYear();
     const currentMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
     const currentDay = String(todayDate.getDate()).padStart(2, '0');
     document.getElementById('run-date').value = `${currentYear}-${currentMonth}-${currentDay}`;
+    // -----------------------------------------------------------------------------------------
 
     const START_DATE = new Date('2026-06-08T00:00:00');
     const END_DATE = new Date('2026-07-10T23:59:59'); 
@@ -483,8 +483,9 @@
 
     async function loadLogsFromServer() {
         if (!SCRIPT_URL) {
-            console.warn('SCRIPT_URL이 지정되지 않아 빈 데이터로 시작합니다.');
-            runningLogs = [];
+            console.warn('SCRIPT_URL이 지정되지 않아 로컬 스토리지를 이용합니다.');
+            runningLogs = JSON.parse(localStorage.getItem('schoolRunningLogs')) || [];
+            runningLogs.forEach((log, idx) => log.globalIndex = idx);
             updateDashboard();
             return;
         }
@@ -499,8 +500,9 @@
             updateDashboard();
         } catch (error) {
             console.error('에러:', error);
-            alert('구글 시트에서 데이터를 불러오지 못했습니다. 스크립트 배포 설정 및 Live Server 실행 여부를 확인하세요.');
-            runningLogs = [];
+            alert('구글 시트에서 데이터를 불러오지 못했습니다. 로컬 데이터를 표시합니다.');
+            runningLogs = JSON.parse(localStorage.getItem('schoolRunningLogs')) || [];
+            runningLogs.forEach((log, idx) => log.globalIndex = idx);
             updateDashboard();
         }
     }
@@ -541,4 +543,169 @@
             tr.innerHTML = `
                 <td>${dateStr.length >= 10 ? dateStr.substring(5, 10) : dateStr}</td>
                 <td><small style="color:var(--text-muted);">${safeGrade} ${safeClass}</small><br><strong>${safeName || '무명'}</strong></td>
-                <td style="color:
+                <td style="color: var(--accent); font-weight:bold;">${distNum.toFixed(2)} km</td>
+                <td>
+                    ${log['증빙사진 (Base64)'] ? `<button class="action-btn view-btn" onclick="viewImage(${log.globalIndex})">보기</button>` : `<span style="color:var(--text-muted); font-size:12px; margin-right:12px;">없음</span>`}
+                </td>
+            `;
+            logBody.appendChild(tr);
+        });
+
+        const classTotals = {};
+        filteredLogs.forEach(log => {
+            const classKey = `${log['학년'] || '미지정'} ${log['반'] || '미지정'}`;
+            if (!classTotals[classKey]) {
+                classTotals[classKey] = 0;
+            }
+            
+            let distNum = parseFloat(log['거리 (km)']);
+            if (isNaN(distNum)) distNum = 0;
+            
+            classTotals[classKey] += distNum;
+        });
+
+        const sortedClasses = Object.keys(classTotals).map(classKey => ({
+            className: classKey,
+            total: classTotals[classKey]
+        })).sort((a, b) => b.total - a.total);
+
+        rankBody.innerHTML = '';
+        if(sortedClasses.length === 0) {
+            rankBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted);">등록된 기록이 없습니다.</td></tr>`;
+        }
+        
+        sortedClasses.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><span class="rank-badge">${index + 1}</span></td>
+                <td><strong>${escapeHTML(item.className)}</strong></td>
+                <td style="color: var(--accent); font-weight: bold;">${item.total.toFixed(2)} km</td>
+            `;
+            rankBody.appendChild(tr);
+        });
+
+        localStorage.setItem('schoolRunningLogs', JSON.stringify(runningLogs));
+    }
+
+    async function addLog() {
+        const grade = document.getElementById('student-grade').value;
+        const className = document.getElementById('student-class').value;
+        const name = document.getElementById('student-name').value.trim();
+        const dateInput = document.getElementById('run-date').value;
+        const distanceInput = document.getElementById('run-distance').value;
+        const dateWarn = document.getElementById('date-warn');
+        const submitBtn = document.getElementById('submit-btn-el');
+
+        if (!name || !distanceInput || parseFloat(distanceInput) <= 0) {
+            alert('이름과 거리를 정확하게 입력해주세요!');
+            return;
+        }
+
+        const inputDate = new Date(dateInput);
+        if (!dateInput || inputDate < START_DATE || inputDate > END_DATE) {
+            dateWarn.style.display = 'block';
+            alert('지정된 챌린지 기간 내의 날짜만 입력 가능합니다.');
+            return;
+        } else {
+            dateWarn.style.display = 'none';
+        }
+
+        submitBtn.innerHTML = '⏳ 등록 중...';
+        submitBtn.disabled = true;
+
+        const base64Image = compressedBase64;
+
+        if (!base64Image || base64Image.trim() === '') {
+            alert('⚠️ 증빙 사진은 필수입니다! 사진을 선택한 후 다시 시도해주세요.');
+            submitBtn.innerHTML = '기록 등록하기';
+            submitBtn.disabled = false;
+            return; 
+        }
+
+        const payload = {
+            action: 'create',
+            date: dateInput,
+            grade: grade,
+            class: className,
+            name: name,
+            distance: distanceInput,
+            base64Image: base64Image
+        };
+
+        if (!SCRIPT_URL) {
+            const mockRow = {
+                '날짜': dateInput,
+                '학년': grade,
+                '반': className,
+                '이름': name,
+                '거리 (km)': distanceInput,
+                '증빙사진 (Base64)': base64Image
+            };
+            runningLogs.push(mockRow);
+            runningLogs.forEach((log, idx) => log.globalIndex = idx);
+            alert(`[테스트 모드] ${name} 기록이 로컬에 임시 저장되었습니다.\n실제 저장을 하려면 SCRIPT_URL을 지정하세요.`);
+            
+            document.getElementById('student-name').value = '';
+            document.getElementById('run-distance').value = '';
+            document.getElementById('proof-image').value = '';
+            clearImagePreview();
+            updateDashboard();
+
+            submitBtn.innerHTML = '기록 등록하기';
+            submitBtn.disabled = false;
+            return;
+        }
+
+        try {
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error('등록 실패');
+            
+            alert(`${name} 기록이 구글 시트에 등록되었습니다!`);
+            
+            document.getElementById('student-name').value = '';
+            document.getElementById('run-distance').value = '';
+            document.getElementById('proof-image').value = '';
+            clearImagePreview();
+            
+            await loadLogsFromServer();
+
+        } catch (error) {
+            console.error('에러:', error);
+            alert('구글 시트에 등록하지 못했습니다. URL 주소 및 구글 스크립트 권한 설정을 확인하세요.');
+        } finally {
+            submitBtn.innerHTML = '기록 등록하기';
+            submitBtn.disabled = false;
+        }
+    }
+
+    function viewImage(globalIndex) {
+        const modal = document.getElementById('imageModal');
+        const modalImg = document.getElementById('modalImg');
+        const modalInfo = document.getElementById('modalStudentInfo');
+        
+        const log = runningLogs[globalIndex];
+        if (log && log['증빙사진 (Base64)']) {
+            let distNum = parseFloat(log['거리 (km)']);
+            if (isNaN(distNum)) distNum = 0;
+            
+            modalInfo.innerText = `${escapeHTML(log['학년'])} ${escapeHTML(log['반'])} ${escapeHTML(log['이름'])} (${distNum.toFixed(2)} km)`;
+            modalImg.src = log['증빙사진 (Base64)'];
+            modal.style.display = 'flex';
+        } else {
+            alert('증빙 이미지를 불러올 수 없습니다.');
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('imageModal').style.display = 'none';
+    }
+
+    window.onload = loadLogsFromServer;
+</script>
+</body>
+</html>
