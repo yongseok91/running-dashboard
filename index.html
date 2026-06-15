@@ -508,8 +508,8 @@
             updateDashboard();
         } catch (error) {
             console.error('에러:', error);
-            alert('구글 시트에서 데이터를 불러오지 못했습니다. 로컬 데이터를 표시합니다.');
-            runningLogs = JSON.parse(localStorage.getItem('schoolRunningLogs')) || [];
+            alert('구글 시트에서 데이터를 불러오지 못했습니다. 네트워크 연결을 확인하세요.');
+            runningLogs = []; // 빈 배열로 초기화하여 대시보드가 완전히 멈추는 것을 방지
             updateDashboard();
         }
     }
@@ -604,7 +604,6 @@
             rankBody.appendChild(tr);
         });
 
-        localStorage.setItem('schoolRunningLogs', JSON.stringify(runningLogs));
     }
 
     async function addLog() {
