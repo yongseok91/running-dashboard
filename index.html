@@ -230,8 +230,6 @@
         }
         .view-btn { background-color: #3b82f6; color: white; margin-right: 4px;}
         .view-btn:hover { background-color: #2563eb; }
-        .delete-btn { background-color: #ef4444; color: white; }
-        .delete-btn:hover { background-color: #dc2626; }
 
         .date-notice {
             font-size: 11px;
@@ -388,21 +386,19 @@
 </div>
 
 <script>
-    // [수정 완료] 성공적으로 확인된 최신 구글 웹 앱 URL 주소로 매핑했습니다.
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx_aDSe71NcYniJyj11jTEEqUNOzVTo_ka0cbjonZ21Rq2varXFX1YhC_by3ZPCOzJM/exec'; 
+    // 본인의 실시간 구글 웹 앱 URL 주소를 입력하세요.
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwfa2OmXn4DDmqOOTj-UPaDLBNLHdeXqz--sgw3mD9Xhs-qBm_4lR1iYn0Svm0Xhe4t/exec'; 
 
     let runningLogs = [];
     let compressedBase64 = ''; 
 
     // 오늘 날짜 기본설정
     const todayDate = new Date();
-    const currentYear = todayDate.getFullYear();
-    const currentMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
-    const currentDay = String(todayDate.getDate()).padStart(2, '0');
-    document.getElementById('run-date').value = `${currentYear}-${currentMonth}-${currentDay}`;
+    document.getElementById('run-date').value = todayDate.toISOString().split('T')[0];
 
-    const START_DATE = new Date('2026-06-08T00:00:00');
-    const END_DATE = new Date('2026-07-15T23:59:59'); 
+    // [수정] 문자열 비교 방식으로 시차 오류 원천 차단
+    const START_DATE_STR = '2026-06-08';
+    const END_DATE_STR = '2026-07-15'; 
 
     function escapeHTML(str) {
         if (!str) return '';
@@ -426,7 +422,7 @@
     }
 
     function compressImage(file, maxWidth = 800, quality = 0.7) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = function(e) {
                 const img = new Image();
@@ -449,8 +445,10 @@
                     const base64 = canvas.toDataURL('image/jpeg', quality);
                     resolve(base64);
                 };
+                img.onerror = () => reject(new Error('이미지 로드 실패'));
                 img.src = e.target.result;
             };
+            reader.onerror = () => reject(new Error('파일 읽기 실패'));
             reader.readAsDataURL(file);
         });
     }
@@ -466,7 +464,6 @@
 
             try {
                 compressedBase64 = await compressImage(input.files[0], 800, 0.7);
-                
                 previewImg.src = compressedBase64;
                 previewBox.style.display = 'block';
                 fileLabel.innerHTML = '✅ 선택 완료';
@@ -482,9 +479,10 @@
     }
 
     function clearImagePreview() {
-        compressedBase64 = '';
+        compressedBase64 = ''; // [수정] 취소 시 기존 데이터를 명확하게 초기화
         document.getElementById('input-preview-box').style.display = 'none';
         document.getElementById('input-preview-img').src = '';
+        document.getElementById('proof-image').value = '';
         const fileLabel = document.getElementById('file-label');
         fileLabel.innerHTML = '📁 사진 선택';
         fileLabel.style.backgroundColor = 'var(--file-btn)';
@@ -493,24 +491,25 @@
     async function loadLogsFromServer() {
         if (!SCRIPT_URL) {
             runningLogs = JSON.parse(localStorage.getItem('schoolRunningLogs')) || [];
-            runningLogs.forEach((log, idx) => log.globalIndex = idx);
             updateDashboard();
             return;
         }
 
         try {
-            const response = await fetch(`${SCRIPT_URL}?action=read`);
+            // [수정] 캐시 방지 및 확실한 비동기 로딩 처리
+            const response = await fetch(`${SCRIPT_URL}?action=read&_cb=${Date.now()}`);
             if (!response.ok) throw new Error('데이터 불러오기 실패');
-            runningLogs = await response.json();
-            if (Array.isArray(runningLogs)) {
-                runningLogs.forEach((log, idx) => log.globalIndex = idx);
+            const data = await response.json();
+            if (Array.isArray(data)) {
+                runningLogs = data;
+            } else {
+                runningLogs = [];
             }
             updateDashboard();
         } catch (error) {
             console.error('에러:', error);
             alert('구글 시트에서 데이터를 불러오지 못했습니다. 로컬 데이터를 표시합니다.');
             runningLogs = JSON.parse(localStorage.getItem('schoolRunningLogs')) || [];
-            runningLogs.forEach((log, idx) => log.globalIndex = idx);
             updateDashboard();
         }
     }
@@ -523,15 +522,23 @@
             runningLogs = [];
         }
 
-        // [수정 완료] 시트 데이터 검증 시 날짜 조건만 타이트하게 체크하여 데이터 누락 차단
+        // 고유 인덱스 재부여
+        runningLogs.forEach((log, idx) => log.globalIndex = idx);
+
+        // [수정] 타임존 오류가 없는 문자열(YYYY-MM-DD) 기반 날짜 필터링 고도화
         const filteredLogs = runningLogs.filter(log => {
             if (!log || !log['날짜']) return false;
-            
-            const logDate = new Date(log['날짜']);
-            return logDate >= START_DATE && logDate <= END_DATE;
+            let dateStr = String(log['날짜']).trim();
+            if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+            return dateStr >= START_DATE_STR && dateStr <= END_DATE_STR;
         });
         
-        filteredLogs.sort((a, b) => new Date(b['날짜']) - new Date(a['날짜']));
+        // 날짜 기준 내림차순 정렬 (최신순)
+        filteredLogs.sort((a, b) => {
+            const dateA = String(a['날짜']).substring(0, 10);
+            const dateB = String(b['날짜']).substring(0, 10);
+            return dateB.localeCompare(dateA);
+        });
 
         logBody.innerHTML = '';
         if(filteredLogs.length === 0) {
@@ -542,8 +549,9 @@
             let distNum = parseFloat(log['거리 (km)']);
             if (isNaN(distNum)) distNum = 0;
 
-            const dateStr = log['날짜'] ? String(log['날짜']) : '';
-            // 숫자 형식 데이터 유연 바인딩 처리
+            let dateStr = log['날짜'] ? String(log['날짜']).trim() : '';
+            if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+            
             const safeGrade = escapeHTML(formatGradeClass(log['학년'], 'g'));
             const safeClass = escapeHTML(formatGradeClass(log['반'], 'c'));
             const safeName = escapeHTML(log['이름']);
@@ -573,7 +581,6 @@
             
             let distNum = parseFloat(log['거리 (km)']);
             if (isNaN(distNum)) distNum = 0;
-            
             classTotals[classKey] += distNum;
         });
 
@@ -614,8 +621,7 @@
             return;
         }
 
-        const inputDate = new Date(dateInput);
-        if (!dateInput || inputDate < START_DATE || inputDate > END_DATE) {
+        if (!dateInput || dateInput < START_DATE_STR || dateInput > END_DATE_STR) {
             dateWarn.style.display = 'block';
             alert('지정된 챌린지 기간 내의 날짜만 입력 가능합니다.');
             return;
@@ -623,17 +629,14 @@
             dateWarn.style.display = 'none';
         }
 
-        submitBtn.innerHTML = '⏳ 등록 중...';
-        submitBtn.disabled = true;
-
         const base64Image = compressedBase64;
-
         if (!base64Image || base64Image.trim() === '') {
             alert('⚠️ 증빙 사진은 필수입니다! 사진을 선택한 후 다시 시도해주세요.');
-            submitBtn.innerHTML = '기록 등록하기';
-            submitBtn.disabled = false;
             return; 
         }
+
+        submitBtn.innerHTML = '⏳ 등록 중...';
+        submitBtn.disabled = true;
 
         const payload = {
             action: 'create',
@@ -646,26 +649,27 @@
         };
 
         try {
+            // [수정] mode: 'cors' 옵션 추가로 크로스 도메인 보안 에러 차단
             const response = await fetch(SCRIPT_URL, {
                 method: 'POST',
+                mode: 'cors',
                 headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify(payload)
             });
 
             if (!response.ok) throw new Error('등록 실패');
             
-            alert(`${name} 기록이 구글 시트에 등록되었습니다!`);
+            alert(`${name} 학생의 기록이 성공적으로 등록되었습니다!`);
             
             document.getElementById('student-name').value = '';
             document.getElementById('run-distance').value = '';
-            document.getElementById('proof-image').value = '';
             clearImagePreview();
             
             await loadLogsFromServer();
 
         } catch (error) {
             console.error('에러:', error);
-            alert('구글 시트에 등록하지 못했습니다. URL 주소 및 구글 스크립트 권한 설정을 확인하세요.');
+            alert('구글 시트에 등록하지 못했습니다. 스크립트 배포 주소 및 권한 승인 상태를 확인해 주세요.');
         } finally {
             submitBtn.innerHTML = '기록 등록하기';
             submitBtn.disabled = false;
