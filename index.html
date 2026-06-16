@@ -280,6 +280,11 @@
             transition: background 0.2s;
         }
         .close-modal:hover { background-color: #64748b; }
+
+        /* 그룹 토글 헤더 스타일 추가 */
+        .group-header-clickable:hover {
+            filter: brightness(1.2);
+        }
     </style>
 </head>
 <body>
@@ -386,17 +391,14 @@
 </div>
 
 <script>
-    // 본인의 실시간 구글 웹 앱 URL 주소를 입력하세요.
     const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwfa2OmXn4DDmqOOTj-UPaDLBNLHdeXqz--sgw3mD9Xhs-qBm_4lR1iYn0Svm0Xhe4t/exec'; 
 
     let runningLogs = [];
     let compressedBase64 = ''; 
 
-    // 오늘 날짜 기본설정
     const todayDate = new Date();
     document.getElementById('run-date').value = todayDate.toISOString().split('T')[0];
 
-    // [수정] 문자열 비교 방식으로 시차 오류 원천 차단
     const START_DATE_STR = '2026-06-08';
     const END_DATE_STR = '2026-07-15'; 
 
@@ -479,7 +481,7 @@
     }
 
     function clearImagePreview() {
-        compressedBase64 = ''; // [수정] 취소 시 기존 데이터를 명확하게 초기화
+        compressedBase64 = ''; 
         document.getElementById('input-preview-box').style.display = 'none';
         document.getElementById('input-preview-img').src = '';
         document.getElementById('proof-image').value = '';
@@ -496,7 +498,6 @@
         }
 
         try {
-            // [수정] 캐시 방지 및 확실한 비동기 로딩 처리
             const response = await fetch(`${SCRIPT_URL}?action=read&_cb=${Date.now()}`);
             if (!response.ok) throw new Error('데이터 불러오기 실패');
             const data = await response.json();
@@ -509,9 +510,27 @@
         } catch (error) {
             console.error('에러:', error);
             alert('구글 시트에서 데이터를 불러오지 못했습니다. 네트워크 연결을 확인하세요.');
-            runningLogs = []; // 빈 배열로 초기화하여 대시보드가 완전히 멈추는 것을 방지
+            runningLogs = []; 
             updateDashboard();
         }
+    }
+
+    // [핵심 변경] 과거 기록을 접고 펼칠 수 있는 토글 함수
+    function toggleGroup(groupKey, headerElement) {
+        const targetRows = document.querySelectorAll(`.group-row-${groupKey}`);
+        const arrowElement = headerElement.querySelector('.toggle-arrow');
+        const statusElement = headerElement.querySelector('.toggle-status');
+        
+        if (targetRows.length === 0) return;
+        
+        const isHidden = targetRows[0].style.display === 'none';
+        
+        targetRows.forEach(row => {
+            row.style.display = isHidden ? '' : 'none';
+        });
+        
+        if (arrowElement) arrowElement.innerText = isHidden ? '▼' : '▶';
+        if (statusElement) statusElement.innerText = isHidden ? '접기' : '펼치기';
     }
 
     function updateDashboard() {
@@ -522,10 +541,8 @@
             runningLogs = [];
         }
 
-        // 고유 인덱스 재부여
         runningLogs.forEach((log, idx) => log.globalIndex = idx);
 
-        // [수정] 타임존 오류가 없는 문자열(YYYY-MM-DD) 기반 날짜 필터링 고도화
         const filteredLogs = runningLogs.filter(log => {
             if (!log || !log['날짜']) return false;
             let dateStr = String(log['날짜']).trim();
@@ -533,42 +550,112 @@
             return dateStr >= START_DATE_STR && dateStr <= END_DATE_STR;
         });
         
-        // 날짜 기준 내림차순 정렬 (최신순)
         filteredLogs.sort((a, b) => {
             const dateA = String(a['날짜']).substring(0, 10);
             const dateB = String(b['날짜']).substring(0, 10);
             return dateB.localeCompare(dateA);
         });
 
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
         logBody.innerHTML = '';
         if(filteredLogs.length === 0) {
             logBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">최근 등록된 기록이 없습니다.</td></tr>`;
+        } else {
+            const groups = {};
+
+            filteredLogs.forEach((log) => {
+                let dateStr = log['날짜'] ? String(log['날짜']).trim() : '';
+                if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+                
+                const logDate = new Date(dateStr);
+                logDate.setHours(0,0,0,0);
+                const diffTime = today - logDate;
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+                let groupKey = 0; 
+                let groupTitle = '';
+
+                if (diffDays < 0) {
+                    groupKey = -1;
+                    groupTitle = '📅 진행 예정 기록';
+                } else {
+                    groupKey = Math.floor(diffDays / 3); 
+                    const startRange = groupKey * 3;
+                    const endRange = startRange + 2;
+                    
+                    if (groupKey === 0) {
+                        groupTitle = '🔥 최근 3일 이내 기록';
+                    } else {
+                        groupTitle = `📅 ${startRange}일 ~ ${endRange}일 전 기록`;
+                    }
+                }
+
+                if (!groups[groupKey]) {
+                    groups[groupKey] = { title: groupTitle, logs: [] };
+                }
+                groups[groupKey].logs.push(log);
+            });
+
+            const sortedGroupKeys = Object.keys(groups).map(Number).sort((a, b) => a - b);
+
+            sortedGroupKeys.forEach(key => {
+                const group = groups[key];
+                
+                // 최근 3일 이내(key === 0)가 아니면 기본적으로 접어둡니다.
+                const shouldCollapse = (key !== 0); 
+                
+                const headerTr = document.createElement('tr');
+                headerTr.className = shouldCollapse ? 'group-header-clickable' : '';
+                if (shouldCollapse) {
+                    headerTr.style.cursor = 'pointer';
+                    headerTr.setAttribute('onclick', `toggleGroup(${key}, this)`);
+                }
+
+                headerTr.innerHTML = `
+                    <td colspan="4" style="background-color: #1e293b; color: var(--accent); font-weight: bold; padding: 10px 8px; border-left: 4px solid var(--accent); font-size: 13px; user-select: none;">
+                        <span class="toggle-arrow" style="margin-right: 5px;">${shouldCollapse ? '▶' : '🔽'}</span>
+                        ${group.title} (${group.logs.length}건)
+                        ${shouldCollapse ? `<span class="toggle-status" style="float: right; font-size: 11px; color: var(--text-muted); font-weight: normal; background: #334155; padding: 2px 6px; border-radius: 4px;">펼치기</span>` : ''}
+                    </td>
+                `;
+                logBody.appendChild(headerTr);
+
+                group.logs.forEach(log => {
+                    let distNum = parseFloat(log['거리 (km)']);
+                    if (isNaN(distNum)) distNum = 0;
+
+                    let dateStr = log['날짜'] ? String(log['날짜']).trim() : '';
+                    if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+                    
+                    const safeGrade = escapeHTML(formatGradeClass(log['학년'], 'g'));
+                    const safeClass = escapeHTML(formatGradeClass(log['반'], 'c'));
+                    const safeName = escapeHTML(log['이름']);
+                    const imageValue = log['증빙사진 (Base64)'];
+
+                    const tr = document.createElement('tr');
+                    tr.className = `group-row-${key}`;
+                    
+                    // 과거 기록 데이터 행은 초기 노출 시 숨김 처리
+                    if (shouldCollapse) {
+                        tr.style.display = 'none';
+                    }
+
+                    tr.innerHTML = `
+                        <td style="padding-left: 15px;">${dateStr.length >= 10 ? dateStr.substring(5, 10) : dateStr}</td>
+                        <td><small style="color:var(--text-muted);">${safeGrade} ${safeClass}</small><br><strong>${safeName || '무명'}</strong></td>
+                        <td style="color: var(--accent); font-weight:bold;">${distNum.toFixed(2)} km</td>
+                        <td>
+                            ${(imageValue && imageValue.trim() !== '') ? `<button class="action-btn view-btn" onclick="viewImage(${log.globalIndex})">보기</button>` : `<span style="color:var(--text-muted); font-size:12px; margin-right:12px;">없음</span>`}
+                        </td>
+                    `;
+                    logBody.appendChild(tr);
+                });
+            });
         }
 
-        filteredLogs.forEach((log) => {
-            let distNum = parseFloat(log['거리 (km)']);
-            if (isNaN(distNum)) distNum = 0;
-
-            let dateStr = log['날짜'] ? String(log['날짜']).trim() : '';
-            if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
-            
-            const safeGrade = escapeHTML(formatGradeClass(log['학년'], 'g'));
-            const safeClass = escapeHTML(formatGradeClass(log['반'], 'c'));
-            const safeName = escapeHTML(log['이름']);
-            const imageValue = log['증빙사진 (Base64)'];
-
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${dateStr.length >= 10 ? dateStr.substring(5, 10) : dateStr}</td>
-                <td><small style="color:var(--text-muted);">${safeGrade} ${safeClass}</small><br><strong>${safeName || '무명'}</strong></td>
-                <td style="color: var(--accent); font-weight:bold;">${distNum.toFixed(2)} km</td>
-                <td>
-                    ${(imageValue && imageValue.trim() !== '') ? `<button class="action-btn view-btn" onclick="viewImage(${log.globalIndex})">보기</button>` : `<span style="color:var(--text-muted); font-size:12px; margin-right:12px;">없음</span>`}
-                </td>
-            `;
-            logBody.appendChild(tr);
-        });
-
+        // 학년/반별 누적 거리 순위 계산
         const classTotals = {};
         filteredLogs.forEach(log => {
             const gradeStr = formatGradeClass(log['학년'], 'g');
@@ -603,7 +690,6 @@
             `;
             rankBody.appendChild(tr);
         });
-
     }
 
     async function addLog() {
@@ -648,7 +734,6 @@
         };
 
         try {
-            // [수정] mode: 'cors' 옵션 추가로 크로스 도메인 보안 에러 차단
             const response = await fetch(SCRIPT_URL, {
                 method: 'POST',
                 mode: 'cors',
